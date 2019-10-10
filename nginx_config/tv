@@ -1,0 +1,131 @@
+#######################################
+#
+# T V   S E R V E R
+#
+# This is merely a template that can be
+# used to build your own specific nginx
+# config for your site.
+#
+#######################################
+
+# python application handling OAuth, streams,
+# start of streaming and stop of streaming.
+upstream tv_backend {
+    server 127.0.0.1:8000;
+}
+
+# Who uses port 80 for anythin anymore?
+server {
+
+    server_name tv tv.SOME_DOMAIN;
+    listen 80;
+
+    access_log /var/log/nginx/tv.log main;
+
+    location / {
+            return 301 https://tv.SOME_DOMAIN$request_uri;
+    }
+}
+
+
+server {
+
+    server_name tv tv.SOME_DOMAIN;
+    ####################################################
+    # SSL
+    listen 443 ssl http2;
+    # where you keep your free Let's Enctype cert info:
+    include ssl/cert_info.conf; 
+    #
+    ####################################################
+
+    root /var/www/tv/streams;
+
+    access_log /var/log/nginx/tv.log main;
+
+    more_set_headers "Content-Security-Policy: frame-ancestors 'self' SOME_DOMAIN *.SOME_DOMAIN";
+
+    location ~ ^/.+\.ts$ {
+        # cache MPEG-TS segments if we have them
+        expires max;
+    }
+
+#    location ~ ^/live/[^/]+/index\.m3u8$ {
+#        # Don't cache live HLS manifests, if needed
+#        expires -1d;
+#    }
+
+
+    # The m3u8 manifest file contains the key URLs.  The client sends
+    # us that URL request which contains a hash of their session id, stream
+    # stream name and secret key (set in this config).  If valid, we
+    # return the decryption key.
+    location ~ ^/keys/([^/]+)/[0-9]+\.key$ {
+        # which stream?
+        set $stream_name $1;
+
+        # get the hash
+        set $user_sig $arg_s;
+
+        # if auth_request works, give them a key
+        auth_request /get_authorize_key;
+    }
+
+    # internal access only request to authorize the proivded key
+    location = /get_authorize_key {
+        internal;
+
+        # Generate hash based on their session id, stream name and secret key
+        # this should match what was generated earlier and provided in their manifest
+        set_hmac_sha1 $sig "cookienumnum" "$cookie_sessionid $stream_name";
+        set_encode_base64 $sig $sig;
+
+        # first, do the hashes match?
+        if ($sig != $user_sig) {
+            # imposter!!!!
+            return 403;
+        }
+
+        # Only valid logged-in users can watch this stream.
+        # pass request to application.  If they are logged in with a valid
+        # session stored by the app then this returns 200 OK
+        proxy_set_header X-Stream-Name $stream_name;
+        proxy_pass http://tv_backend/authorize_key;
+    }
+
+    # Serve the video m3u8 file, which in turn lists the video segments and auth key URLs
+    # The stream name is inferred from the URL
+    location ~ ^/live/([^/]+)/index\.m3u8$ {
+
+        expires -1d;
+        more_set_headers "Cache-Control: no-cache";
+
+        # set the stream name
+        set $stream_name $1;
+
+        # Generate signature based on their session id and a secret (sshhhh)
+        set_hmac_sha1 $sig "cookienumnum" "$cookie_sessionid $stream_name";
+        set_encode_base64 $sig $sig;
+
+        # Modify the manifest response to inline append the hash as a parameter to the
+        # key URL.  This parameter will in turn be returned to the /hls URL and verified
+        # for the user base don their session id
+        subs_filter_types application/vnd.apple.mpegurl;
+        subs_filter "URI=\"/keys/([^/]+)/([0-9]+)\.key\"" "URI=\"/keys/$1/$2.key?s=$sig\"" gir;
+    }
+
+
+    # Serve the video m3u8 file for unencrypted streams
+    # The stream name is inferred from the URL
+    location ~ ^/live_clear/([^/]+)/index\.m3u8$ {
+        expires -1d;
+        more_set_headers "Cache-Control: no-cache";
+    }
+
+
+    # Serving the website
+    # All other requests direct t eh web application
+    location / {
+        proxy_pass http://tv_backend/;
+    }
+}

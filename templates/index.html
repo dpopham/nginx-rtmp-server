@@ -1,0 +1,53 @@
+<!-- templates/index.html -->  
+<html>  
+    <head>
+        <title>{{title}}</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename = 'favicon.ico') }}" />
+        <link rel="stylesheet" href="https://www.w3schools.com/w3css/4/w3.css">
+        <link rel="stylesheet" type="text/css" href="https://vjs.zencdn.net/7.5.5/video-js.css" rel="stylesheet">
+        <script src="https://code.jquery.com/jquery-3.4.1.min.js" charset="utf-8"></script>
+    </head>
+    <body>
+        <div class="w3-container w3-teal">
+            <div style="float:left"><h1>{{title}}</h1></div>
+            <div style="float:right;padding:20px;"><button class="w3-btn" onclick="{{button_function}}()">{{button_text}}</button></div>
+        </div>
+
+        <br>
+
+        <div class="w3-container">
+            <form id="videoStreams">
+                <label for="videoStreamsDropdown"><b>Video Streams: </b></label>
+                <select id="videoStreamsDropdown"
+                        name="videoStreamsDropdown"
+                        onchange="changeVideo()"
+                        onmouseover="loadStreams()"></select>
+            </form>
+        </div>
+
+        <div class="w3-container">
+            <div id="currently-playing"><h3>&nbsp;</h3></div>
+            <p>
+            <video id="player" class="video-js vjs-default-skin vjs-big-play-centered" height="360" width="640" controls></video>
+        </div>
+        <script src='https://vjs.zencdn.net/7.5.5/video.js'></script>
+        <script src="{{ url_for('static', filename = 'js/player.js') }}" charset="utf-8"></script>
+        <script>
+            const version={{version}};
+            var timeout = null;
+            function check_version() {
+                $.getJSON("/version", function(result){
+                    if (version != result.version) {
+                        if (timeout != null) {
+                            clearInterval(timeout);
+                        }
+                        location.reload(true);
+                    }
+                });
+            }
+            timeout = setInterval(check_version, {{interval}} * 1000);
+        </script>
+    </body>
+</html>  
